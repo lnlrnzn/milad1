@@ -45,7 +45,8 @@ export async function register(
   })
 
   if (error) {
-    return { error: "Registrierung fehlgeschlagen. Bitte versuchen Sie es erneut." }
+    console.error("Registration error:", error.message, error.status)
+    return { error: `Registrierung fehlgeschlagen: ${error.message}` }
   }
 
   redirect("/login?registered=true")
