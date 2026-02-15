@@ -32,6 +32,12 @@ export async function register(
     }
   }
 
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    return {
+      error: `Supabase nicht konfiguriert. URL: ${process.env.NEXT_PUBLIC_SUPABASE_URL ? "OK" : "FEHLT"}, Key: ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? "OK" : "FEHLT"}`,
+    }
+  }
+
   const supabase = await createClient()
   const { error } = await supabase.auth.signUp({
     email: result.data.email,
