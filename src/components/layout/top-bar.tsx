@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Menu, Bell, LogOut, Settings, User } from "lucide-react"
+import { Menu, Bell, LogOut, Settings, User, Shield } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -13,14 +13,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { MobileSidebar } from "@/components/layout/sidebar"
+import { MobileAdminSidebar } from "@/components/layout/admin-sidebar"
 import Link from "next/link"
 
 export function TopBar({
   profile,
   unreadCount,
+  isAdmin,
 }: {
   profile: { first_name: string | null; last_name: string | null; email: string }
   unreadCount: number
+  isAdmin?: boolean
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
@@ -35,7 +38,11 @@ export function TopBar({
 
   return (
     <>
-      <MobileSidebar open={sidebarOpen} onOpenChange={setSidebarOpen} />
+      {isAdmin ? (
+        <MobileAdminSidebar open={sidebarOpen} onOpenChange={setSidebarOpen} />
+      ) : (
+        <MobileSidebar open={sidebarOpen} onOpenChange={setSidebarOpen} />
+      )}
       <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b bg-background px-4 lg:px-6">
         <Button
           variant="ghost"
@@ -49,7 +56,16 @@ export function TopBar({
 
         <div className="flex-1" />
 
-        <Link href="/dashboard" className="relative">
+        {isAdmin && (
+          <Link href="/dashboard">
+            <Badge variant="outline" className="gap-1 text-xs">
+              <Shield className="h-3 w-3" />
+              Admin
+            </Badge>
+          </Link>
+        )}
+
+        <Link href={isAdmin ? "/admin" : "/dashboard"} className="relative">
           <Button variant="ghost" size="icon">
             <Bell className="h-5 w-5" />
             <span className="sr-only">Benachrichtigungen</span>
@@ -75,18 +91,29 @@ export function TopBar({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem asChild>
-              <Link href="/settings" className="flex items-center gap-2">
-                <User className="h-4 w-4" />
-                Profil
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/settings" className="flex items-center gap-2">
-                <Settings className="h-4 w-4" />
-                Einstellungen
-              </Link>
-            </DropdownMenuItem>
+            {isAdmin ? (
+              <DropdownMenuItem asChild>
+                <Link href="/dashboard" className="flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  Zum Portal
+                </Link>
+              </DropdownMenuItem>
+            ) : (
+              <>
+                <DropdownMenuItem asChild>
+                  <Link href="/settings" className="flex items-center gap-2">
+                    <User className="h-4 w-4" />
+                    Profil
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/settings" className="flex items-center gap-2">
+                    <Settings className="h-4 w-4" />
+                    Einstellungen
+                  </Link>
+                </DropdownMenuItem>
+              </>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
               <form action="/api/auth/signout" method="POST" className="w-full">

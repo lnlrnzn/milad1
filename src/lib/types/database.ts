@@ -14,6 +14,131 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_activity_log: {
+        Row: {
+          action: string
+          admin_id: string
+          created_at: string
+          details: Json | null
+          entity_id: string | null
+          entity_type: string
+          id: string
+        }
+        Insert: {
+          action: string
+          admin_id: string
+          created_at?: string
+          details?: Json | null
+          entity_id?: string | null
+          entity_type: string
+          id?: string
+        }
+        Update: {
+          action?: string
+          admin_id?: string
+          created_at?: string
+          details?: Json | null
+          entity_id?: string | null
+          entity_type?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "admin_activity_log_admin_id_fkey"
+            columns: ["admin_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_profiles: {
+        Row: {
+          advisor_id: string | null
+          annual_salary: number | null
+          client_status: string
+          commission_rate: number | null
+          contract_date: string | null
+          contract_type: string | null
+          created_at: string
+          credit_score: string | null
+          equity_capital: number | null
+          first_consultation_date: string | null
+          id: string
+          investment_budget: number | null
+          notes: string | null
+          payment_status: string | null
+          planned_property_count: number | null
+          preferred_property_type: string | null
+          preferred_region: string | null
+          risk_appetite: string | null
+          tax_class: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          advisor_id?: string | null
+          annual_salary?: number | null
+          client_status?: string
+          commission_rate?: number | null
+          contract_date?: string | null
+          contract_type?: string | null
+          created_at?: string
+          credit_score?: string | null
+          equity_capital?: number | null
+          first_consultation_date?: string | null
+          id?: string
+          investment_budget?: number | null
+          notes?: string | null
+          payment_status?: string | null
+          planned_property_count?: number | null
+          preferred_property_type?: string | null
+          preferred_region?: string | null
+          risk_appetite?: string | null
+          tax_class?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          advisor_id?: string | null
+          annual_salary?: number | null
+          client_status?: string
+          commission_rate?: number | null
+          contract_date?: string | null
+          contract_type?: string | null
+          created_at?: string
+          credit_score?: string | null
+          equity_capital?: number | null
+          first_consultation_date?: string | null
+          id?: string
+          investment_budget?: number | null
+          notes?: string | null
+          payment_status?: string | null
+          planned_property_count?: number | null
+          preferred_property_type?: string | null
+          preferred_region?: string | null
+          risk_appetite?: string | null
+          tax_class?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_profiles_advisor_id_fkey"
+            columns: ["advisor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_profiles_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contacts: {
         Row: {
           company: string | null
@@ -654,7 +779,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      is_admin: { Args: never; Returns: boolean }
     }
     Enums: {
       contact_type:
