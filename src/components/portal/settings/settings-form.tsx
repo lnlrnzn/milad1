@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useOptimistic, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
@@ -17,46 +17,60 @@ import {
 } from "@/components/ui/card"
 import { User, Lock, Save } from "lucide-react"
 
+type ProfileData = {
+  first_name: string
+  last_name: string
+  email: string
+  phone: string
+}
+
 export function SettingsForm({
   profile,
 }: {
-  profile: {
-    first_name: string
-    last_name: string
-    email: string
-    phone: string
-  }
+  profile: ProfileData
 }) {
-  const [saving, setSaving] = useState(false)
   const [changingPassword, setChangingPassword] = useState(false)
+  const [isPending, startTransition] = useTransition()
   const router = useRouter()
+
+  const [optimisticProfile, setOptimisticProfile] = useOptimistic(
+    profile,
+    (_current: ProfileData, update: Partial<ProfileData>) => ({
+      ..._current,
+      ...update,
+    })
+  )
 
   async function handleProfileSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setSaving(true)
 
-    try {
-      const supabase = createClient()
-      const formData = new FormData(e.currentTarget)
-
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          first_name: formData.get("first_name") as string,
-          last_name: formData.get("last_name") as string,
-          phone: formData.get("phone") as string,
-        })
-        .eq("email", profile.email)
-
-      if (error) throw error
-
-      toast.success("Profil erfolgreich aktualisiert")
-      router.refresh()
-    } catch {
-      toast.error("Fehler beim Speichern des Profils")
-    } finally {
-      setSaving(false)
+    const formData = new FormData(e.currentTarget)
+    const update = {
+      first_name: formData.get("first_name") as string,
+      last_name: formData.get("last_name") as string,
+      phone: formData.get("phone") as string,
     }
+
+    startTransition(async () => {
+      // Optimistically update UI immediately
+      setOptimisticProfile(update)
+
+      try {
+        const supabase = createClient()
+
+        const { error } = await supabase
+          .from("profiles")
+          .update(update)
+          .eq("email", profile.email)
+
+        if (error) throw error
+
+        toast.success("Profil erfolgreich aktualisiert")
+        router.refresh()
+      } catch {
+        toast.error("Fehler beim Speichern des Profils")
+      }
+    })
   }
 
   async function handlePasswordSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -117,7 +131,8 @@ export function SettingsForm({
                 <Input
                   id="first_name"
                   name="first_name"
-                  defaultValue={profile.first_name}
+                  defaultValue={optimisticProfile.first_name}
+                  key={optimisticProfile.first_name}
                   autoComplete="given-name"
                 />
               </div>
@@ -126,7 +141,8 @@ export function SettingsForm({
                 <Input
                   id="last_name"
                   name="last_name"
-                  defaultValue={profile.last_name}
+                  defaultValue={optimisticProfile.last_name}
+                  key={optimisticProfile.last_name}
                   autoComplete="family-name"
                 />
               </div>
@@ -136,7 +152,7 @@ export function SettingsForm({
               <Input
                 id="email"
                 type="email"
-                value={profile.email}
+                value={optimisticProfile.email}
                 disabled
                 className="bg-muted"
               />
@@ -150,16 +166,17 @@ export function SettingsForm({
                 id="phone"
                 name="phone"
                 type="tel"
-                defaultValue={profile.phone}
+                defaultValue={optimisticProfile.phone}
+                key={optimisticProfile.phone}
                 placeholder="+49 123 4567890"
                 autoComplete="tel"
               />
             </div>
             <Separator />
             <div className="flex justify-end">
-              <Button type="submit" disabled={saving}>
+              <Button type="submit" disabled={isPending}>
                 <Save className="mr-2 h-4 w-4" />
-                {saving ? "Speichern..." : "Speichern"}
+                {isPending ? "Speichern..." : "Speichern"}
               </Button>
             </div>
           </form>

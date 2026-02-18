@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import Link from "next/link"
@@ -19,7 +20,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { ArrowLeft, Building2, MapPin } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
+import { ArrowLeft, MapPin } from "lucide-react"
 import { formatCurrency } from "@/components/shared/currency-display"
 import { MetricCard } from "@/components/shared/metric-card"
 import { Wallet, TrendingUp, Users } from "lucide-react"
@@ -56,6 +58,7 @@ export default async function AdminPropertyDetailPage({
   await requireAdmin()
   const supabase = await createClient()
 
+  // Fast: single row by PK
   const { data: property } = await supabase
     .from("properties")
     .select("*")
@@ -64,59 +67,15 @@ export default async function AdminPropertyDetailPage({
 
   if (!property) notFound()
 
-  // Get valuations, financials, owners, tenants in parallel
-  const [
-    { data: valuations },
-    { data: financials },
-    { data: userProperties },
-    { data: tenants },
-    { data: investors },
-  ] = await Promise.all([
-    supabase
-      .from("property_valuations")
-      .select("*")
-      .eq("property_id", id)
-      .order("valuation_date", { ascending: false }),
-    supabase
-      .from("property_financials")
-      .select("*")
-      .eq("property_id", id)
-      .order("month", { ascending: false })
-      .limit(12),
-    supabase
-      .from("user_properties")
-      .select("user_id, ownership_percentage, profiles:user_id(first_name, last_name, email)")
-      .eq("property_id", id),
-    supabase
-      .from("tenants")
-      .select("*")
-      .eq("property_id", id),
-    // Get all investors for assignment
-    supabase
-      .from("profiles")
-      .select("id, first_name, last_name")
-      .eq("role", "investor"),
-  ])
-
-  const latestVal = valuations?.[0]
-  const latestFin = financials?.[0]
-  const currentValue = latestVal?.market_value ?? property.purchase_price
-  const appreciation = property.purchase_price > 0
-    ? ((currentValue - property.purchase_price) / property.purchase_price) * 100
-    : 0
-
-  // Get existing owner IDs to exclude from assignment
-  const ownerIds = new Set((userProperties ?? []).map((up) => up.user_id))
-  const availableInvestors = (investors ?? [])
-    .filter((inv) => !ownerIds.has(inv.id))
-    .map((inv) => ({
-      id: inv.id,
-      name: [inv.first_name, inv.last_name].filter(Boolean).join(" ") || inv.id,
-    }))
+  // Get investors for assignment dialog (fast, small result set)
+  const { data: investors } = await supabase
+    .from("profiles")
+    .select("id, first_name, last_name")
+    .eq("role", "investor")
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header - renders immediately */}
       <div className="flex items-center gap-3">
         <Link href="/admin/properties">
           <Button variant="ghost" size="icon-sm">
@@ -139,12 +98,105 @@ export default async function AdminPropertyDetailPage({
         </div>
       </div>
 
+      {/* KPIs, Actions, and all data stream in together */}
+      <Suspense fallback={<PropertyDataSkeleton />}>
+        <PropertyRelatedData
+          propertyId={id}
+          property={property}
+          allInvestors={investors ?? []}
+        />
+      </Suspense>
+    </div>
+  )
+}
+
+function PropertyDataSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap gap-2">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-9 w-36" />
+        ))}
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-28 rounded-xl" />
+        ))}
+      </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Skeleton className="h-48 rounded-xl" />
+        <Skeleton className="h-48 rounded-xl" />
+      </div>
+      <Skeleton className="h-52 rounded-xl" />
+      <Skeleton className="h-52 rounded-xl" />
+    </div>
+  )
+}
+
+async function PropertyRelatedData({
+  propertyId,
+  property,
+  allInvestors,
+}: {
+  propertyId: string
+  property: {
+    purchase_price: number
+    [key: string]: unknown
+  }
+  allInvestors: { id: string; first_name: string | null; last_name: string | null }[]
+}) {
+  const supabase = await createClient()
+
+  const [
+    { data: valuations },
+    { data: financials },
+    { data: userProperties },
+    { data: tenants },
+  ] = await Promise.all([
+    supabase
+      .from("property_valuations")
+      .select("*")
+      .eq("property_id", propertyId)
+      .order("valuation_date", { ascending: false }),
+    supabase
+      .from("property_financials")
+      .select("*")
+      .eq("property_id", propertyId)
+      .order("month", { ascending: false })
+      .limit(12),
+    supabase
+      .from("user_properties")
+      .select("user_id, ownership_percentage, profiles:user_id(first_name, last_name, email)")
+      .eq("property_id", propertyId),
+    supabase
+      .from("tenants")
+      .select("*")
+      .eq("property_id", propertyId),
+  ])
+
+  const latestVal = valuations?.[0]
+  const latestFin = financials?.[0]
+  const currentValue = latestVal?.market_value ?? property.purchase_price
+  const appreciation = property.purchase_price > 0
+    ? ((currentValue - property.purchase_price) / property.purchase_price) * 100
+    : 0
+
+  const ownerIds = new Set((userProperties ?? []).map((up) => up.user_id))
+  const availableInvestors = allInvestors
+    .filter((inv) => !ownerIds.has(inv.id))
+    .map((inv) => ({
+      id: inv.id,
+      name: [inv.first_name, inv.last_name].filter(Boolean).join(" ") || inv.id,
+    }))
+
+  return (
+    <>
       {/* Actions */}
       <div className="flex flex-wrap gap-2">
-        <PropertyForm property={property} />
-        <ValuationForm propertyId={id} />
-        <FinancialsForm propertyId={id} />
-        <AssignClientDialog propertyId={id} investors={availableInvestors} />
+        <PropertyForm property={property as Parameters<typeof PropertyForm>[0]["property"]} />
+        <ValuationForm propertyId={propertyId} />
+        <FinancialsForm propertyId={propertyId} />
+        <AssignClientDialog propertyId={propertyId} investors={availableInvestors} />
       </div>
 
       {/* KPIs */}
@@ -365,6 +417,6 @@ export default async function AdminPropertyDetailPage({
           </Table>
         </CardContent>
       </Card>
-    </div>
+    </>
   )
 }

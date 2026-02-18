@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import Link from "next/link"
@@ -20,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Skeleton } from "@/components/ui/skeleton"
 import { ArrowLeft, Building2, FileText, Wallet } from "lucide-react"
 import { formatCurrency } from "@/components/shared/currency-display"
 import { MetricCard } from "@/components/shared/metric-card"
@@ -53,7 +55,7 @@ export default async function ClientDetailPage({
   await requireAdmin()
   const supabase = await createClient()
 
-  // Get user profile
+  // Get user profile (fast, single row by PK)
   const { data: profile } = await supabase
     .from("profiles")
     .select("*")
@@ -62,35 +64,101 @@ export default async function ClientDetailPage({
 
   if (!profile) notFound()
 
-  // Get extended client profile
+  // Get extended client profile (also fast, single row)
   const { data: clientProfile } = await supabase
     .from("client_profiles")
     .select("*")
     .eq("user_id", id)
     .single()
 
-  // Get user's properties
-  const { data: userProperties } = await supabase
-    .from("user_properties")
-    .select(
-      `
-      property_id, ownership_percentage, acquired_at,
-      properties (
-        id, name, street, city, zip_code, type, status, purchase_price,
-        property_valuations (market_value, valuation_date),
-        property_financials (rental_income, mortgage_payment, net_income, month)
-      )
-    `
-    )
-    .eq("user_id", id)
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <Link href="/admin/clients">
+          <Button variant="ghost" size="icon-sm">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+        </Link>
+        <div>
+          <h1 className="font-heading text-2xl font-bold">Kundendetail</h1>
+        </div>
+      </div>
 
-  // Get user's documents
-  const { data: documents } = await supabase
-    .from("documents")
-    .select("id, name, file_size, mime_type, created_at, document_categories(name)")
-    .eq("user_id", id)
-    .order("created_at", { ascending: false })
-    .limit(20)
+      <ClientDetailHeader profile={profile} clientProfile={clientProfile} />
+
+      {/* Portfolio KPIs + Tabs stream in together */}
+      <Suspense fallback={<ClientDataSkeleton />}>
+        <ClientPortfolioData userId={id} clientProfile={clientProfile} />
+      </Suspense>
+    </div>
+  )
+}
+
+function ClientDataSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-28 rounded-xl" />
+        ))}
+      </div>
+      <div className="space-y-4">
+        <div className="flex gap-2">
+          <Skeleton className="h-9 w-24" />
+          <Skeleton className="h-9 w-24" />
+          <Skeleton className="h-9 w-32" />
+        </div>
+        <Skeleton className="h-80 rounded-xl" />
+      </div>
+    </div>
+  )
+}
+
+async function ClientPortfolioData({
+  userId,
+  clientProfile,
+}: {
+  userId: string
+  clientProfile: {
+    annual_salary: number | null
+    equity_capital: number | null
+    credit_score: string | null
+    tax_class: number | null
+    risk_appetite: string | null
+    investment_budget: number | null
+    preferred_region: string | null
+    preferred_property_type: string | null
+    planned_property_count: number | null
+    contract_type: string | null
+    commission_rate: number | null
+    payment_status: string | null
+    notes: string | null
+  } | null
+}) {
+  const supabase = await createClient()
+
+  // Fetch properties and documents in parallel
+  const [{ data: userProperties }, { data: documents }] = await Promise.all([
+    supabase
+      .from("user_properties")
+      .select(
+        `
+        property_id, ownership_percentage, acquired_at,
+        properties (
+          id, name, street, city, zip_code, type, status, purchase_price,
+          property_valuations (market_value, valuation_date),
+          property_financials (rental_income, mortgage_payment, net_income, month)
+        )
+      `
+      )
+      .eq("user_id", userId),
+    supabase
+      .from("documents")
+      .select("id, name, file_size, mime_type, created_at, document_categories(name)")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(20),
+  ])
 
   // Process properties
   const properties = (userProperties ?? []).map((up) => {
@@ -133,20 +201,7 @@ export default async function ClientDetailPage({
   const totalNet = properties.reduce((s, p) => s + p.net_income, 0)
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link href="/admin/clients">
-          <Button variant="ghost" size="icon-sm">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="font-heading text-2xl font-bold">Kundendetail</h1>
-        </div>
-      </div>
-
-      <ClientDetailHeader profile={profile} clientProfile={clientProfile} />
-
+    <>
       {/* Portfolio KPIs */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
@@ -394,7 +449,7 @@ export default async function ClientDetailPage({
           </Card>
         </TabsContent>
       </Tabs>
-    </div>
+    </>
   )
 }
 
