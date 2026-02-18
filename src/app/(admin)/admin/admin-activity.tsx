@@ -5,8 +5,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Activity } from "lucide-react"
+import {
+  Activity,
+  Users,
+  Building2,
+  Store,
+  Mail,
+  FileText,
+  TrendingUp,
+  Wallet,
+  MessageSquare,
+  Bell,
+  StickyNote,
+} from "lucide-react"
 import { EmptyState } from "@/components/shared/empty-state"
 
 const actionLabels: Record<string, string> = {
@@ -23,19 +34,33 @@ const actionLabels: Record<string, string> = {
   "message.sent": "Nachricht gesendet",
   "document.uploaded": "Dokument hochgeladen",
   "email.sent": "E-Mail gesendet",
+  "notification.sent": "Benachrichtigung gesendet",
+  "note.created": "Notiz erstellt",
 }
 
-const entityLabels: Record<string, string> = {
-  profile: "Kunde",
-  property: "Immobilie",
-  offer: "Angebot",
-  conversation: "Nachricht",
-  document: "Dokument",
-  valuation: "Bewertung",
-  financials: "Finanzen",
+const entityConfig: Record<string, { label: string; icon: typeof Activity; borderColor: string }> = {
+  profile: { label: "Kunde", icon: Users, borderColor: "border-l-[oklch(0.55_0.08_75)]" },
+  property: { label: "Immobilie", icon: Building2, borderColor: "border-l-[oklch(0.38_0.08_160)]" },
+  offer: { label: "Angebot", icon: Store, borderColor: "border-l-[oklch(0.65_0.15_45)]" },
+  conversation: { label: "Nachricht", icon: MessageSquare, borderColor: "border-l-blue-500" },
+  document: { label: "Dokument", icon: FileText, borderColor: "border-l-violet-500" },
+  valuation: { label: "Bewertung", icon: TrendingUp, borderColor: "border-l-emerald-500" },
+  financials: { label: "Finanzen", icon: Wallet, borderColor: "border-l-amber-500" },
+  notification: { label: "Benachrichtigung", icon: Bell, borderColor: "border-l-sky-500" },
+  note: { label: "Notiz", icon: StickyNote, borderColor: "border-l-pink-400" },
 }
 
-function formatDate(dateStr: string) {
+function relativeTime(dateStr: string) {
+  const now = Date.now()
+  const then = new Date(dateStr).getTime()
+  const diff = now - then
+  const minutes = Math.floor(diff / 60_000)
+  if (minutes < 1) return "Gerade eben"
+  if (minutes < 60) return `vor ${minutes} Min.`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `vor ${hours} Std.`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `vor ${days} Tag${days > 1 ? "en" : ""}`
   return new Intl.DateTimeFormat("de-DE", {
     day: "2-digit",
     month: "2-digit",
@@ -68,7 +93,7 @@ export async function AdminActivity() {
             description="Noch keine Admin-Aktivitäten vorhanden."
           />
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {activities.map((a) => {
               const admin = a.profiles as unknown as {
                 first_name: string | null
@@ -77,27 +102,33 @@ export async function AdminActivity() {
               const adminName = [admin?.first_name, admin?.last_name]
                 .filter(Boolean)
                 .join(" ") || "Admin"
+
+              const entity = entityConfig[a.entity_type] ?? {
+                label: a.entity_type,
+                icon: Activity,
+                borderColor: "border-l-muted-foreground",
+              }
+              const Icon = entity.icon
+
               return (
                 <div
                   key={a.id}
-                  className="flex items-start justify-between gap-4 rounded-lg border p-3 text-sm"
+                  className={`flex items-start gap-3 rounded-lg border border-l-[3px] p-3 text-sm transition-colors hover:bg-muted/50 ${entity.borderColor}`}
                 >
-                  <div className="min-w-0">
-                    <p className="font-medium">
+                  <div className="mt-0.5 rounded-md bg-muted p-1.5">
+                    <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium leading-tight">
                       {actionLabels[a.action] ?? a.action}
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="mt-0.5 text-xs text-muted-foreground">
                       {adminName}
                     </p>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Badge variant="outline" className="text-xs">
-                      {entityLabels[a.entity_type] ?? a.entity_type}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground whitespace-nowrap">
-                      {formatDate(a.created_at)}
-                    </span>
-                  </div>
+                  <span className="shrink-0 text-xs text-muted-foreground whitespace-nowrap">
+                    {relativeTime(a.created_at)}
+                  </span>
                 </div>
               )
             })}

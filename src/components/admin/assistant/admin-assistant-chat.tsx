@@ -2,7 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useChat } from "@ai-sdk/react"
-import { DefaultChatTransport, isToolUIPart, type FileUIPart } from "ai"
+import {
+  DefaultChatTransport,
+  isToolUIPart,
+  isReasoningUIPart,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+  type FileUIPart,
+} from "ai"
 import { Streamdown } from "streamdown"
 import { code } from "@streamdown/code"
 import {
@@ -20,6 +26,21 @@ import {
   PromptInputFooter,
   PromptInputSubmit,
 } from "@/components/ai-elements/prompt-input"
+import { Shimmer } from "@/components/ai-elements/shimmer"
+import {
+  Reasoning,
+  ReasoningTrigger,
+  ReasoningContent,
+} from "@/components/ai-elements/reasoning"
+import {
+  Confirmation,
+  ConfirmationTitle,
+  ConfirmationRequest,
+  ConfirmationAccepted,
+  ConfirmationRejected,
+  ConfirmationActions,
+  ConfirmationAction,
+} from "@/components/ai-elements/confirmation"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -36,29 +57,47 @@ import {
   Copy,
   Check,
   Trash2,
+  Bell,
+  MessageSquare,
+  UserCog,
+  StickyNote,
+  CheckCircle2,
+  XCircle,
+  Sparkles,
+  BarChart3,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const suggestions = [
   {
+    icon: Mail,
+    label: "Portfolio-Update senden",
+    prompt: "Schicke allen aktiven Kunden ein Portfolio-Update per E-Mail.",
+  },
+  {
+    icon: Sparkles,
+    label: "Willkommens-E-Mail",
+    prompt: "Erstelle eine Willkommens-E-Mail für Neukunden.",
+  },
+  {
     icon: Users,
-    label: "Kundenübersicht",
-    prompt: "Zeig mir eine Übersicht aller Kunden mit Status und Portfolio-Größe.",
+    label: "Inaktive Kunden",
+    prompt: "Zeige Kunden ohne Aktivität in den letzten 30 Tagen.",
+  },
+  {
+    icon: BarChart3,
+    label: "Portfolio-Performance",
+    prompt: "Fasse die Portfolio-Performance dieses Monats zusammen.",
+  },
+  {
+    icon: Bell,
+    label: "Kunden benachrichtigen",
+    prompt: "Benachrichtige alle aktiven Kunden über neue Angebote im Marktplatz.",
   },
   {
     icon: TrendingUp,
-    label: "Portfolio-Analyse",
-    prompt: "Wie sieht die unternehmensweite Finanzübersicht aus?",
-  },
-  {
-    icon: Store,
-    label: "Offene Angebote",
-    prompt: "Welche aktiven Angebote gibt es im Marktplatz?",
-  },
-  {
-    icon: Mail,
-    label: "E-Mail verfassen",
-    prompt: "Verfasse einen E-Mail-Entwurf an einen Kunden zum Thema Portfolioentwicklung.",
+    label: "Finanzbericht",
+    prompt: "Erstelle einen Finanzbericht für alle Kunden.",
   },
 ]
 
@@ -69,12 +108,37 @@ function formatTime(date: Date) {
   return date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })
 }
 
+// ── Tool approval description builders ──────────────────────────────
+
+function getApprovalDescription(toolName: string, input: Record<string, unknown>): string {
+  switch (toolName) {
+    case "send_email":
+      return `E-Mail an ${input.recipientName ?? "Kunde"} senden? Betreff: "${input.subject ?? ""}"`
+    case "send_notification": {
+      const ids = input.userIds as string[] | undefined
+      return `Benachrichtigung an ${ids?.length ?? 0} Kunden senden?`
+    }
+    case "send_message":
+      return `Nachricht an Kunden senden? Betreff: "${input.subject ?? ""}"`
+    case "update_client_status":
+      return `Kundenstatus auf "${input.newStatus ?? ""}" ändern?`
+    case "create_task_note":
+      return "Notiz erstellen?"
+    default:
+      return `${toolName} ausführen?`
+  }
+}
+
 export function AdminAssistantChat() {
   const [input, setInput] = useState("")
   const timestampsRef = useRef<Map<string, Date>>(new Map())
   const [, forceUpdate] = useState(0)
 
-  const { messages, sendMessage, setMessages, status, stop } = useChat({ transport })
+  const { messages, sendMessage, setMessages, status, stop, addToolApprovalResponse } =
+    useChat({
+      transport,
+      sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
+    })
   const isLoading = status === "submitted" || status === "streaming"
 
   useEffect(() => {
@@ -144,19 +208,19 @@ export function AdminAssistantChat() {
               </div>
               <div className="text-center">
                 <h2 className="font-heading text-lg font-semibold">
-                  Admin Assistent
+                  SDIA Digitaler Mitarbeiter
                 </h2>
                 <p className="mt-1 max-w-md text-sm text-muted-foreground">
-                  Ich kann Ihnen bei der Verwaltung von Kunden, Immobilien,
-                  Finanzen und Kommunikation helfen.
+                  Ich kann Daten abfragen, E-Mails senden, Kunden benachrichtigen
+                  und Aktionen im System ausführen.
                 </p>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2 max-w-lg w-full">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 max-w-2xl w-full">
                 {suggestions.map((s) => (
                   <button
                     key={s.label}
                     onClick={() => handleSend(s.prompt)}
-                    className="flex items-center gap-2.5 rounded-lg border p-3 text-left text-sm transition-colors hover:bg-muted/50"
+                    className="flex items-center gap-2.5 rounded-lg border p-3 text-left text-sm transition-colors hover:bg-muted/50 hover:border-primary/30"
                   >
                     <s.icon className="h-4 w-4 shrink-0 text-primary" />
                     <span>{s.label}</span>
@@ -168,6 +232,7 @@ export function AdminAssistantChat() {
             messages.map((message, messageIndex) => {
               const isUser = message.role === "user"
               const isAssistant = message.role === "assistant"
+              const isLastMsg = messageIndex === messages.length - 1
               const timestamp = timestampsRef.current.get(message.id)
 
               return (
@@ -197,9 +262,38 @@ export function AdminAssistantChat() {
                     <Message from={message.role} className="max-w-full w-auto">
                       <MessageContent>
                         {message.parts.map((part, partIndex) => {
+                          // ── Reasoning ──
+                          if (isReasoningUIPart(part)) {
+                            const isReasoningStreaming =
+                              isLastMsg &&
+                              status === "streaming" &&
+                              message.parts.at(-1)?.type === "reasoning"
+                            return (
+                              <Reasoning
+                                key={`reasoning-${partIndex}`}
+                                isStreaming={isReasoningStreaming}
+                              >
+                                <ReasoningTrigger
+                                  getThinkingMessage={(streaming, duration) =>
+                                    streaming ? (
+                                      <Shimmer duration={1}>Denke nach...</Shimmer>
+                                    ) : (
+                                      <span>
+                                        Gedacht für {duration} Sekunde
+                                        {duration !== 1 ? "n" : ""}
+                                      </span>
+                                    )
+                                  }
+                                />
+                                <ReasoningContent>{part.text}</ReasoningContent>
+                              </Reasoning>
+                            )
+                          }
+
+                          // ── Text ──
                           if (part.type === "text") {
                             const isLastAssistant =
-                              isAssistant && messageIndex === messages.length - 1
+                              isAssistant && isLastMsg
                             return (
                               <Streamdown
                                 key={`text-${partIndex}`}
@@ -212,8 +306,76 @@ export function AdminAssistantChat() {
                             )
                           }
 
+                          // ── Tools ──
                           if (isToolUIPart(part)) {
                             const toolName = part.type.replace(/^tool-/, "")
+
+                            // Approval-requested → Confirmation dialog
+                            if (part.state === "approval-requested") {
+                              const toolInput = (part.input ?? {}) as Record<string, unknown>
+                              return (
+                                <Confirmation
+                                  key={part.toolCallId}
+                                  state="approval-requested"
+                                >
+                                  <ConfirmationTitle>Aktion bestätigen</ConfirmationTitle>
+                                  <ConfirmationRequest>
+                                    {getApprovalDescription(toolName, toolInput)}
+                                  </ConfirmationRequest>
+                                  <ConfirmationActions>
+                                    <ConfirmationAction
+                                      variant="approve"
+                                      onClick={() =>
+                                        addToolApprovalResponse({
+                                          id: part.toolCallId,
+                                          approved: true,
+                                        })
+                                      }
+                                    >
+                                      Genehmigen
+                                    </ConfirmationAction>
+                                    <ConfirmationAction
+                                      variant="reject"
+                                      onClick={() =>
+                                        addToolApprovalResponse({
+                                          id: part.toolCallId,
+                                          approved: false,
+                                        })
+                                      }
+                                    >
+                                      Abbrechen
+                                    </ConfirmationAction>
+                                  </ConfirmationActions>
+                                </Confirmation>
+                              )
+                            }
+
+                            // Approval-responded → Show result
+                            if (part.state === "approval-responded") {
+                              const approved = part.approval?.approved === true
+                              return (
+                                <Confirmation
+                                  key={part.toolCallId}
+                                  state="approval-responded"
+                                  approved={approved}
+                                >
+                                  <ConfirmationTitle>
+                                    {approved ? "Genehmigt" : "Abgebrochen"}
+                                  </ConfirmationTitle>
+                                  {approved ? (
+                                    <ConfirmationAccepted>
+                                      Aktion wird ausgeführt...
+                                    </ConfirmationAccepted>
+                                  ) : (
+                                    <ConfirmationRejected>
+                                      Aktion wurde abgebrochen.
+                                    </ConfirmationRejected>
+                                  )}
+                                </Confirmation>
+                              )
+                            }
+
+                            // All other tool states → existing AdminToolDisplay
                             return (
                               <AdminToolDisplay
                                 key={part.toolCallId}
@@ -266,7 +428,7 @@ export function AdminAssistantChat() {
                 <MessageContent>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                    <span>Denke nach...</span>
+                    <Shimmer>Denke nach...</Shimmer>
                   </div>
                 </MessageContent>
               </Message>
@@ -301,7 +463,31 @@ export function AdminAssistantChat() {
   )
 }
 
-// Tool display for admin tools
+// Action tools that change state (vs. read-only tools)
+const ACTION_TOOLS = new Set([
+  "send_email",
+  "send_notification",
+  "send_message",
+  "update_client_status",
+  "create_task_note",
+])
+
+const toolMeta: Record<string, { label: string; icon: typeof Bot }> = {
+  client_lookup: { label: "Kundensuche", icon: Users },
+  property_lookup_all: { label: "Immobiliensuche", icon: Building2 },
+  financial_overview: { label: "Finanzübersicht", icon: TrendingUp },
+  document_search_all: { label: "Dokumentensuche", icon: FileText },
+  offer_management: { label: "Angebote", icon: Store },
+  client_portfolio: { label: "Kundenportfolio", icon: Users },
+  compose_email_draft: { label: "E-Mail-Entwurf", icon: Mail },
+  activity_log: { label: "Aktivitäten", icon: Activity },
+  send_email: { label: "E-Mail senden", icon: Mail },
+  send_notification: { label: "Benachrichtigung", icon: Bell },
+  send_message: { label: "Nachricht senden", icon: MessageSquare },
+  update_client_status: { label: "Status ändern", icon: UserCog },
+  create_task_note: { label: "Notiz erstellen", icon: StickyNote },
+}
+
 function AdminToolDisplay({
   toolName,
   state,
@@ -311,44 +497,74 @@ function AdminToolDisplay({
   state: string
   output?: unknown
 }) {
-  const toolLabels: Record<string, { label: string; icon: typeof Bot }> = {
-    client_lookup: { label: "Kundensuche", icon: Users },
-    property_lookup_all: { label: "Immobiliensuche", icon: Building2 },
-    financial_overview: { label: "Finanzübersicht", icon: TrendingUp },
-    document_search_all: { label: "Dokumentensuche", icon: FileText },
-    offer_management: { label: "Angebote", icon: Store },
-    client_portfolio: { label: "Kundenportfolio", icon: Users },
-    compose_email_draft: { label: "E-Mail-Entwurf", icon: Mail },
-    activity_log: { label: "Aktivitäten", icon: Activity },
-  }
-
-  const tool = toolLabels[toolName] ?? { label: toolName, icon: Bot }
-  const Icon = tool.icon
+  const meta = toolMeta[toolName] ?? { label: toolName, icon: Bot }
+  const Icon = meta.icon
+  const isAction = ACTION_TOOLS.has(toolName)
 
   if (state === "input-streaming" || state === "input-available") {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-dashed p-3">
+      <div className={cn(
+        "flex items-center gap-2 rounded-lg border border-dashed p-3",
+        isAction && "border-primary/40 bg-primary/5"
+      )}>
         <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-        <span className="text-sm text-muted-foreground">{tool.label}...</span>
+        <span className="text-sm text-muted-foreground">
+          {isAction ? `${meta.label} wird ausgeführt...` : `${meta.label}...`}
+        </span>
       </div>
     )
   }
 
   if (state === "output-error") {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-        Fehler beim Abrufen der Daten.
+      <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+        <XCircle className="h-4 w-4 shrink-0" />
+        <span>{isAction ? "Aktion fehlgeschlagen" : "Fehler beim Abrufen der Daten"}</span>
       </div>
     )
   }
 
   if (state !== "output-available" || !output) return null
 
+  const result = output as Record<string, unknown>
+
+  // Action tools get a special success/error display
+  if (isAction) {
+    const isSuccess = result.success === true
+    return (
+      <div className={cn(
+        "flex items-center gap-2.5 rounded-lg border p-3 text-sm",
+        isSuccess
+          ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
+          : "border-destructive/30 bg-destructive/5 text-destructive"
+      )}>
+        {isSuccess ? (
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+        ) : (
+          <XCircle className="h-4 w-4 shrink-0" />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 font-medium">
+            <Icon className="h-3.5 w-3.5" />
+            {meta.label}
+          </div>
+          {typeof result.message === "string" && (
+            <p className="mt-0.5 text-xs opacity-80">{result.message}</p>
+          )}
+          {typeof result.error === "string" && (
+            <p className="mt-0.5 text-xs opacity-80">{result.error}</p>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // Read-only tools get compact display
   return (
     <div className="rounded-lg border bg-card p-3 text-card-foreground">
       <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
         <Icon className="h-3.5 w-3.5" />
-        {tool.label}
+        {meta.label}
       </div>
       <pre className="overflow-x-auto text-xs text-muted-foreground max-h-40">
         {JSON.stringify(output, null, 2)}

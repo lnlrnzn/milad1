@@ -20,7 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Search, ChevronRight } from "lucide-react"
+import { Search, ChevronRight, Users } from "lucide-react"
 import { formatCurrency } from "@/components/shared/currency-display"
 
 type Client = {
@@ -42,9 +42,9 @@ const statusLabels: Record<string, string> = {
 }
 
 const statusColors: Record<string, string> = {
-  prospect: "bg-blue-100 text-blue-700",
-  active: "bg-green-100 text-green-700",
-  inactive: "bg-gray-100 text-gray-600",
+  prospect: "bg-[oklch(0.38_0.08_160/0.1)] text-[oklch(0.32_0.08_160)]",
+  active: "bg-[oklch(0.55_0.08_75/0.12)] text-[oklch(0.42_0.08_75)]",
+  inactive: "bg-muted text-muted-foreground",
 }
 
 function formatDate(dateStr: string) {
@@ -114,13 +114,27 @@ export function ClientTable({ clients }: { clients: Client[] }) {
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
-                  Keine Kunden gefunden.
+                <TableCell colSpan={8} className="h-32 text-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <Users className="h-8 w-8 text-muted-foreground/50" />
+                    <p className="text-sm text-muted-foreground">
+                      {search || statusFilter !== "all"
+                        ? "Keine Kunden für diese Filter gefunden."
+                        : "Noch keine Kunden vorhanden."}
+                    </p>
+                    {!search && statusFilter === "all" && (
+                      <Link href="/admin/clients">
+                        <Button variant="outline" size="sm" className="mt-1">
+                          Ersten Kunden anlegen
+                        </Button>
+                      </Link>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ) : (
               filtered.map((client) => (
-                <TableRow key={client.id}>
+                <TableRow key={client.id} className="cursor-pointer hover:bg-muted/50">
                   <TableCell className="font-medium">
                     {[client.first_name, client.last_name].filter(Boolean).join(" ") || "—"}
                   </TableCell>

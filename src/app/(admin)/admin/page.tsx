@@ -3,6 +3,7 @@ import { Suspense } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { AdminKPIs } from "./admin-kpis"
 import { AdminActivity } from "./admin-activity"
+import { AdminChartsData } from "./admin-charts-data"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import {
@@ -23,6 +24,15 @@ function KPISkeleton() {
       {Array.from({ length: 4 }).map((_, i) => (
         <Skeleton key={i} className="h-28 rounded-xl" />
       ))}
+    </div>
+  )
+}
+
+function ChartSkeleton() {
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <Skeleton className="h-[340px] rounded-xl" />
+      <Skeleton className="h-[340px] rounded-xl" />
     </div>
   )
 }
@@ -66,6 +76,10 @@ export default function AdminDashboardPage() {
 
       <Suspense fallback={<KPISkeleton />}>
         <AdminKPIs />
+      </Suspense>
+
+      <Suspense fallback={<ChartSkeleton />}>
+        <AdminChartsData />
       </Suspense>
 
       <div className="grid gap-6 lg:grid-cols-2">

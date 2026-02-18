@@ -15,6 +15,7 @@ import {
 import { MobileSidebar } from "@/components/layout/sidebar"
 import { MobileAdminSidebar } from "@/components/layout/admin-sidebar"
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 
 export function TopBar({
   profile,
@@ -26,6 +27,8 @@ export function TopBar({
   isAdmin?: boolean
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const pathname = usePathname()
+  const isInAdminArea = pathname.startsWith("/admin")
 
   const initials = [profile.first_name?.[0], profile.last_name?.[0]]
     .filter(Boolean)
@@ -38,10 +41,10 @@ export function TopBar({
 
   return (
     <>
-      {isAdmin ? (
+      {isInAdminArea ? (
         <MobileAdminSidebar open={sidebarOpen} onOpenChange={setSidebarOpen} />
       ) : (
-        <MobileSidebar open={sidebarOpen} onOpenChange={setSidebarOpen} />
+        <MobileSidebar open={sidebarOpen} onOpenChange={setSidebarOpen} isAdmin={isAdmin} />
       )}
       <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b bg-background px-4 lg:px-6">
         <Button
@@ -57,15 +60,15 @@ export function TopBar({
         <div className="flex-1" />
 
         {isAdmin && (
-          <Link href="/dashboard">
-            <Badge variant="outline" className="gap-1 text-xs">
+          <Link href={isInAdminArea ? "/dashboard" : "/admin"}>
+            <Badge variant="outline" className="gap-1 text-xs hover:bg-accent transition-colors">
               <Shield className="h-3 w-3" />
-              Admin
+              {isInAdminArea ? "Zum Portal" : "Admin"}
             </Badge>
           </Link>
         )}
 
-        <Link href={isAdmin ? "/admin" : "/dashboard"} className="relative">
+        <Link href="/dashboard" className="relative">
           <Button variant="ghost" size="icon">
             <Bell className="h-5 w-5" />
             <span className="sr-only">Benachrichtigungen</span>
@@ -91,29 +94,28 @@ export function TopBar({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
-            {isAdmin ? (
+            {isAdmin && isInAdminArea && (
               <DropdownMenuItem asChild>
                 <Link href="/dashboard" className="flex items-center gap-2">
                   <User className="h-4 w-4" />
                   Zum Portal
                 </Link>
               </DropdownMenuItem>
-            ) : (
-              <>
-                <DropdownMenuItem asChild>
-                  <Link href="/settings" className="flex items-center gap-2">
-                    <User className="h-4 w-4" />
-                    Profil
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/settings" className="flex items-center gap-2">
-                    <Settings className="h-4 w-4" />
-                    Einstellungen
-                  </Link>
-                </DropdownMenuItem>
-              </>
             )}
+            {isAdmin && !isInAdminArea && (
+              <DropdownMenuItem asChild>
+                <Link href="/admin" className="flex items-center gap-2">
+                  <Shield className="h-4 w-4" />
+                  Admin-Bereich
+                </Link>
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem asChild>
+              <Link href="/settings" className="flex items-center gap-2">
+                <Settings className="h-4 w-4" />
+                Einstellungen
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
               <form action="/api/auth/signout" method="POST" className="w-full">

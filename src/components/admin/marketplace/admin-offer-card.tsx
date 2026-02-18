@@ -29,10 +29,10 @@ const statusLabels: Record<string, string> = {
 }
 
 const statusColors: Record<string, string> = {
-  active: "bg-green-100 text-green-700",
-  reserved: "bg-yellow-100 text-yellow-700",
-  sold: "bg-gray-100 text-gray-600",
-  withdrawn: "bg-red-100 text-red-600",
+  active: "bg-[oklch(0.55_0.08_75/0.12)] text-[oklch(0.42_0.08_75)]",
+  reserved: "bg-[oklch(0.75_0.1_75/0.15)] text-[oklch(0.45_0.1_75)]",
+  sold: "bg-muted text-muted-foreground",
+  withdrawn: "bg-destructive/10 text-destructive",
 }
 
 type Offer = {

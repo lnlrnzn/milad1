@@ -385,4 +385,257 @@ export const adminTools = {
       }
     },
   }),
+
+  // ── Action Tools ──────────────────────────────────────────────────
+
+  send_email: tool({
+    description:
+      "Sendet eine echte E-Mail an einen Kunden. Erfordert Name, E-Mail-Adresse, Betreff und Inhalt. Nutze dieses Tool erst NACHDEM du dem Admin eine Vorschau gezeigt und er zugestimmt hat.",
+    needsApproval: true,
+    inputSchema: z.object({
+      recipientEmail: z.string().describe("E-Mail-Adresse des Empfängers"),
+      recipientName: z.string().describe("Name des Empfängers"),
+      subject: z.string().describe("Betreff der E-Mail"),
+      body: z.string().describe("Vollständiger E-Mail-Text (mit Anrede und Grußformel)"),
+    }),
+    execute: async ({ recipientEmail, recipientName, subject, body }) => {
+      const supabase = await createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return { success: false, error: "Nicht authentifiziert" }
+
+      try {
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-email`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+            },
+            body: JSON.stringify({ to: recipientEmail, subject, body }),
+          }
+        )
+
+        if (!res.ok) {
+          const text = await res.text()
+          return { success: false, error: `E-Mail-Versand fehlgeschlagen: ${text}` }
+        }
+
+        // Log activity
+        await supabase.from("admin_activity_log").insert({
+          admin_id: user.id,
+          action: "email.sent",
+          entity_type: "profile",
+          details: { recipientEmail, recipientName, subject },
+        })
+
+        return {
+          success: true,
+          message: `E-Mail "${subject}" wurde erfolgreich an ${recipientName} (${recipientEmail}) gesendet.`,
+        }
+      } catch (err) {
+        return { success: false, error: `Fehler beim Senden: ${err instanceof Error ? err.message : "Unbekannter Fehler"}` }
+      }
+    },
+  }),
+
+  send_notification: tool({
+    description:
+      "Erstellt eine In-App-Benachrichtigung für einen oder mehrere Kunden. Der Kunde sieht die Benachrichtigung im Portal.",
+    needsApproval: true,
+    inputSchema: z.object({
+      userIds: z.array(z.string()).describe("User-IDs der Empfänger"),
+      title: z.string().describe("Titel der Benachrichtigung"),
+      message: z.string().describe("Nachrichtentext"),
+      type: z
+        .enum(["info", "warning", "success", "document", "offer", "message"])
+        .optional()
+        .default("info")
+        .describe("Art der Benachrichtigung"),
+      link: z.string().optional().describe("Optionaler Link im Portal (z.B. /marketplace)"),
+    }),
+    execute: async ({ userIds, title, message, type, link }) => {
+      const supabase = await createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return { success: false, error: "Nicht authentifiziert" }
+
+      const rows = userIds.map((uid) => ({
+        user_id: uid,
+        type: type ?? "info",
+        title,
+        message,
+        link: link ?? null,
+      }))
+
+      const { error, count } = await supabase
+        .from("notifications")
+        .insert(rows, { count: "exact" })
+
+      if (error) return { success: false, error: error.message }
+
+      await supabase.from("admin_activity_log").insert({
+        admin_id: user.id,
+        action: "notification.sent",
+        entity_type: "notification",
+        details: { title, recipientCount: userIds.length, type },
+      })
+
+      return {
+        success: true,
+        message: `Benachrichtigung "${title}" wurde an ${count ?? userIds.length} Kunden gesendet.`,
+      }
+    },
+  }),
+
+  send_message: tool({
+    description:
+      "Erstellt eine neue Nachricht/Konversation im Portal für einen Kunden. Erscheint im Nachrichten-Bereich des Kunden.",
+    needsApproval: true,
+    inputSchema: z.object({
+      userId: z.string().describe("User-ID des Kunden"),
+      subject: z.string().describe("Betreff der Konversation"),
+      content: z.string().describe("Nachrichteninhalt"),
+    }),
+    execute: async ({ userId, subject, content }) => {
+      const supabase = await createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return { success: false, error: "Nicht authentifiziert" }
+
+      // Get admin name
+      const { data: adminProfile } = await supabase
+        .from("profiles")
+        .select("first_name, last_name")
+        .eq("id", user.id)
+        .single()
+      const adminName = [adminProfile?.first_name, adminProfile?.last_name]
+        .filter(Boolean)
+        .join(" ") || "SDIA Team"
+
+      // Create conversation
+      const { data: conv, error: convError } = await supabase
+        .from("conversations")
+        .insert({ user_id: userId, subject })
+        .select("id")
+        .single()
+
+      if (convError || !conv) {
+        return { success: false, error: convError?.message ?? "Konversation konnte nicht erstellt werden" }
+      }
+
+      // Create message
+      const { error: msgError } = await supabase.from("messages").insert({
+        conversation_id: conv.id,
+        sender_type: "advisor",
+        sender_name: adminName,
+        content,
+      })
+
+      if (msgError) return { success: false, error: msgError.message }
+
+      // Create notification for user
+      await supabase.from("notifications").insert({
+        user_id: userId,
+        type: "message",
+        title: "Neue Nachricht von SDIA",
+        message: subject,
+        link: "/messages",
+      })
+
+      await supabase.from("admin_activity_log").insert({
+        admin_id: user.id,
+        action: "message.sent",
+        entity_type: "conversation",
+        entity_id: conv.id,
+        details: { subject, userId },
+      })
+
+      return {
+        success: true,
+        message: `Nachricht "${subject}" wurde an den Kunden gesendet.`,
+        conversationId: conv.id,
+      }
+    },
+  }),
+
+  update_client_status: tool({
+    description:
+      "Ändert den Status eines Kunden (prospect → active → inactive). Nutze dieses Tool nach Rücksprache mit dem Admin.",
+    needsApproval: true,
+    inputSchema: z.object({
+      userId: z.string().describe("User-ID des Kunden"),
+      newStatus: z.enum(["prospect", "active", "inactive"]).describe("Neuer Status"),
+      reason: z.string().optional().describe("Begründung für die Statusänderung"),
+    }),
+    execute: async ({ userId, newStatus, reason }) => {
+      const supabase = await createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return { success: false, error: "Nicht authentifiziert" }
+
+      // Get current status
+      const { data: current } = await supabase
+        .from("client_profiles")
+        .select("client_status")
+        .eq("user_id", userId)
+        .single()
+
+      const oldStatus = current?.client_status ?? "prospect"
+
+      const { error } = await supabase
+        .from("client_profiles")
+        .update({ client_status: newStatus })
+        .eq("user_id", userId)
+
+      if (error) return { success: false, error: error.message }
+
+      await supabase.from("admin_activity_log").insert({
+        admin_id: user.id,
+        action: "client.status_changed",
+        entity_type: "profile",
+        entity_id: userId,
+        details: { oldStatus, newStatus, reason },
+      })
+
+      const statusLabels: Record<string, string> = {
+        prospect: "Interessent",
+        active: "Aktiv",
+        inactive: "Inaktiv",
+      }
+
+      return {
+        success: true,
+        message: `Kundenstatus wurde von "${statusLabels[oldStatus]}" auf "${statusLabels[newStatus]}" geändert.`,
+      }
+    },
+  }),
+
+  create_task_note: tool({
+    description:
+      "Erstellt eine Admin-Notiz oder Aufgabe zu einem Kunden/einer Immobilie im Aktivitätsprotokoll.",
+    needsApproval: true,
+    inputSchema: z.object({
+      entityType: z.enum(["profile", "property", "offer"]).describe("Typ des betroffenen Objekts"),
+      entityId: z.string().optional().describe("ID des betroffenen Objekts"),
+      note: z.string().describe("Inhalt der Notiz/Aufgabe"),
+    }),
+    execute: async ({ entityType, entityId, note }) => {
+      const supabase = await createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return { success: false, error: "Nicht authentifiziert" }
+
+      const { error } = await supabase.from("admin_activity_log").insert({
+        admin_id: user.id,
+        action: "note.created",
+        entity_type: entityType,
+        entity_id: entityId ?? null,
+        details: { note },
+      })
+
+      if (error) return { success: false, error: error.message }
+
+      return {
+        success: true,
+        message: `Notiz wurde erstellt: "${note.substring(0, 80)}${note.length > 80 ? "..." : ""}"`,
+      }
+    },
+  }),
 }

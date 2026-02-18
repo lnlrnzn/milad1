@@ -20,7 +20,7 @@ export default async function PortalLayout({
   const [{ data: profile }, { count: unreadCount }] = await Promise.all([
     supabase
       .from("profiles")
-      .select("first_name, last_name, email")
+      .select("first_name, last_name, email, role")
       .eq("id", user.id)
       .single(),
     supabase
@@ -30,9 +30,11 @@ export default async function PortalLayout({
       .eq("read", false),
   ])
 
+  const isAdmin = profile?.role === "admin"
+
   return (
     <div className="min-h-screen bg-background">
-      <Sidebar />
+      <Sidebar isAdmin={isAdmin} />
       <div className="lg:pl-64">
         <TopBar
           profile={
@@ -43,6 +45,7 @@ export default async function PortalLayout({
             }
           }
           unreadCount={unreadCount ?? 0}
+          isAdmin={isAdmin}
         />
         <main className="p-4 lg:p-6">{children}</main>
       </div>

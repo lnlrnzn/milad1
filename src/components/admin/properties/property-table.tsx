@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Search, ChevronRight } from "lucide-react"
+import { Search, ChevronRight, Building2 } from "lucide-react"
 import { formatCurrency } from "@/components/shared/currency-display"
 
 type Property = {
@@ -41,9 +41,9 @@ const statusLabels: Record<string, string> = {
 }
 
 const statusColors: Record<string, string> = {
-  active: "bg-green-100 text-green-700",
-  sold: "bg-gray-100 text-gray-600",
-  in_acquisition: "bg-blue-100 text-blue-700",
+  active: "bg-[oklch(0.55_0.08_75/0.12)] text-[oklch(0.42_0.08_75)]",
+  sold: "bg-muted text-muted-foreground",
+  in_acquisition: "bg-[oklch(0.38_0.08_160/0.1)] text-[oklch(0.32_0.08_160)]",
 }
 
 export function PropertyTable({ properties }: { properties: Property[] }) {
@@ -89,13 +89,27 @@ export function PropertyTable({ properties }: { properties: Property[] }) {
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
-                  Keine Immobilien gefunden.
+                <TableCell colSpan={8} className="h-32 text-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <Building2 className="h-8 w-8 text-muted-foreground/50" />
+                    <p className="text-sm text-muted-foreground">
+                      {search
+                        ? "Keine Immobilien für diese Suche gefunden."
+                        : "Noch keine Immobilien vorhanden."}
+                    </p>
+                    {!search && (
+                      <Link href="/admin/properties">
+                        <Button variant="outline" size="sm" className="mt-1">
+                          Erste Immobilie anlegen
+                        </Button>
+                      </Link>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ) : (
               filtered.map((p) => (
-                <TableRow key={p.id}>
+                <TableRow key={p.id} className="cursor-pointer hover:bg-muted/50">
                   <TableCell className="font-medium">{p.name}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {p.address}
