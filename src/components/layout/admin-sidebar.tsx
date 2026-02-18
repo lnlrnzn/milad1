@@ -103,7 +103,7 @@ export function MobileAdminSidebar({
             SDIA Admin
           </SheetTitle>
         </SheetHeader>
-        <div onClick={() => onOpenChange(false)}>
+        <div role="presentation" onClick={() => onOpenChange(false)}>
           <NavContent />
         </div>
         <div className="border-t border-sidebar-border p-3">

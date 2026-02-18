@@ -105,7 +105,7 @@ export function MobileSidebar({
             SDIA
           </SheetTitle>
         </SheetHeader>
-        <div onClick={() => onOpenChange(false)}>
+        <div role="presentation" onClick={() => onOpenChange(false)}>
           <NavContent isAdmin={isAdmin} />
         </div>
       </SheetContent>

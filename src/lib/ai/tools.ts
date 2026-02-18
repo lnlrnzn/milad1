@@ -1,8 +1,10 @@
 import { tool } from "ai"
 import { z } from "zod/v4"
 import { createClient } from "@/lib/supabase/server"
+import { createPdfTools } from "@/lib/ai/pdf-tools"
 
 export const assistantTools = {
+  ...createPdfTools("user"),
   property_lookup: tool({
     description:
       "Immobiliendaten des Nutzers abrufen. Liefert Informationen zu allen Immobilien oder einer bestimmten Immobilie, inklusive Bewertungen und Finanzdaten.",

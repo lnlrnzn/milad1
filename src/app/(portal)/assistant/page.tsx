@@ -1,11 +1,15 @@
 import type { Metadata } from "next"
+import { getSessions } from "@/lib/chat/queries"
+import { ChatLayout } from "@/components/shared/chat/chat-layout"
 import { AssistantChat } from "@/components/portal/assistant/assistant-chat"
 
 export const metadata: Metadata = {
   title: "KI-Assistent",
 }
 
-export default function AssistantPage() {
+export default async function AssistantPage() {
+  const sessions = await getSessions(false)
+
   return (
     <div className="space-y-6">
       <div>
@@ -15,7 +19,13 @@ export default function AssistantPage() {
           Finanzen
         </p>
       </div>
-      <AssistantChat />
+      <ChatLayout
+        sessions={sessions}
+        activeSessionId={null}
+        isAdmin={false}
+      >
+        <AssistantChat />
+      </ChatLayout>
     </div>
   )
 }

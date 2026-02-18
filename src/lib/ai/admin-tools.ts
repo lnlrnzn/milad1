@@ -1,8 +1,11 @@
 import { tool } from "ai"
 import { z } from "zod/v4"
 import { createClient } from "@/lib/supabase/server"
+import { createServiceClient } from "@/lib/supabase/service"
+import { createPdfTools } from "@/lib/ai/pdf-tools"
 
 export const adminTools = {
+  ...createPdfTools("admin"),
   client_lookup: tool({
     description:
       "Alle Kunden suchen und listen. Liefert Profildaten, erweiterte Kundendaten und Portfolio-Informationen.",
@@ -635,6 +638,151 @@ export const adminTools = {
       return {
         success: true,
         message: `Notiz wurde erstellt: "${note.substring(0, 80)}${note.length > 80 ? "..." : ""}"`,
+      }
+    },
+  }),
+
+  create_client: tool({
+    description:
+      "Legt einen neuen Kunden (Investor) im System an. Erstellt Auth-Account, Profil und Kundendaten. " +
+      "Verwende dieses Tool, wenn ein Admin einen neuen Interessenten oder Kunden erfassen möchte.",
+    needsApproval: true,
+    inputSchema: z.object({
+      email: z.string().describe("E-Mail-Adresse des Kunden (wird für Login verwendet)"),
+      firstName: z.string().describe("Vorname"),
+      lastName: z.string().describe("Nachname"),
+      phone: z.string().optional().describe("Telefonnummer"),
+      annualSalary: z.number().optional().describe("Jahresgehalt in Euro"),
+      equityCapital: z.number().optional().describe("Verfügbares Eigenkapital in Euro"),
+      investmentBudget: z.number().optional().describe("Investitionsbudget in Euro"),
+      notes: z.string().optional().describe("Interne Notizen zum Kunden"),
+      sendWelcomeEmail: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Ob eine Willkommens-E-Mail gesendet werden soll"),
+    }),
+    execute: async ({
+      email,
+      firstName,
+      lastName,
+      phone,
+      annualSalary,
+      equityCapital,
+      investmentBudget,
+      notes,
+      sendWelcomeEmail,
+    }) => {
+      const supabase = await createClient()
+      const {
+        data: { user: adminUser },
+      } = await supabase.auth.getUser()
+      if (!adminUser) return { success: false, error: "Nicht authentifiziert" }
+
+      // Verify admin role
+      const { data: adminProfile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", adminUser.id)
+        .single()
+      if (adminProfile?.role !== "admin") {
+        return { success: false, error: "Keine Berechtigung" }
+      }
+
+      try {
+        // Create auth user with service role (handle_new_user trigger creates profile)
+        const serviceClient = createServiceClient()
+        const { data: authData, error: authError } =
+          await serviceClient.auth.admin.createUser({
+            email,
+            email_confirm: true,
+            user_metadata: { first_name: firstName, last_name: lastName },
+          })
+
+        if (authError || !authData.user) {
+          return {
+            success: false,
+            error: `Auth-Benutzer konnte nicht erstellt werden: ${authError?.message ?? "Unbekannter Fehler"}`,
+          }
+        }
+
+        const userId = authData.user.id
+
+        // Update profile with phone if provided (trigger only sets name + email)
+        if (phone) {
+          await serviceClient
+            .from("profiles")
+            .update({ phone })
+            .eq("id", userId)
+        }
+
+        // Create client_profiles row with additional data
+        const { error: cpError } = await serviceClient
+          .from("client_profiles")
+          .insert({
+            user_id: userId,
+            annual_salary: annualSalary ?? null,
+            equity_capital: equityCapital ?? null,
+            investment_budget: investmentBudget ?? null,
+            notes: notes ?? null,
+            client_status: "prospect",
+          })
+
+        if (cpError) {
+          return {
+            success: false,
+            error: `Kundenprofil konnte nicht erstellt werden: ${cpError.message}`,
+          }
+        }
+
+        // Log activity
+        await supabase.from("admin_activity_log").insert({
+          admin_id: adminUser.id,
+          action: "client.created",
+          entity_type: "profile",
+          entity_id: userId,
+          details: {
+            email,
+            name: `${firstName} ${lastName}`,
+            annualSalary,
+          },
+        })
+
+        // Optionally send welcome email
+        if (sendWelcomeEmail) {
+          try {
+            await fetch(
+              `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-email`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                },
+                body: JSON.stringify({
+                  to: email,
+                  subject: "Willkommen bei SDIA – Ihr Kundenportal",
+                  body: `Sehr geehrte/r ${firstName} ${lastName},\n\nwillkommen bei der Süddeutschen Immobilienagentur!\n\nWir haben Ihr persönliches Kundenportal eingerichtet. Dort können Sie Ihr Immobilien-Portfolio verwalten, Dokumente einsehen und mit Ihrem Berater kommunizieren.\n\nUm loszulegen, setzen Sie bitte zunächst Ihr Passwort über folgenden Link:\n${process.env.NEXT_PUBLIC_APP_URL ?? "https://sdia-portal.de"}/forgot-password\n\nBei Fragen stehen wir Ihnen gerne zur Verfügung.\n\nMit freundlichen Grüßen\nIhr SDIA-Team`,
+                }),
+              }
+            )
+          } catch {
+            // Don't fail the whole operation if email fails
+          }
+        }
+
+        return {
+          success: true,
+          userId,
+          name: `${firstName} ${lastName}`,
+          email,
+          message: `Kunde "${firstName} ${lastName}" (${email}) wurde erfolgreich angelegt.${sendWelcomeEmail ? " Willkommens-E-Mail wurde gesendet." : ""}`,
+        }
+      } catch (err) {
+        return {
+          success: false,
+          error: `Kunde konnte nicht angelegt werden: ${err instanceof Error ? err.message : "Unbekannter Fehler"}`,
+        }
       }
     },
   }),

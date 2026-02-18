@@ -4,46 +4,18 @@ import { notFound } from "next/navigation"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
 import { requireAdmin } from "@/lib/supabase/admin"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { Skeleton } from "@/components/ui/skeleton"
-import { ArrowLeft, Building2, FileText, Wallet } from "lucide-react"
-import { formatCurrency } from "@/components/shared/currency-display"
-import { MetricCard } from "@/components/shared/metric-card"
+import { Button } from "@/components/ui/button"
+import { ArrowLeft } from "lucide-react"
 import { ClientDetailHeader } from "@/components/admin/clients/client-detail-header"
+import { ClientKpis } from "@/components/admin/client-portfolio/client-kpis"
+import { ClientPropertiesTable } from "@/components/admin/client-portfolio/client-properties-table"
+import { ClientDocumentsTable } from "@/components/admin/client-portfolio/client-documents-table"
+import { ClientDetailsTab } from "@/components/admin/client-portfolio/client-details-tab"
 
 export const metadata: Metadata = {
   title: "Kundendetail - Admin",
-}
-
-const typeLabels: Record<string, string> = {
-  apartment: "Wohnung",
-  house: "Haus",
-  multi_family: "MFH",
-  commercial: "Gewerbe",
-}
-
-function formatDate(dateStr: string) {
-  return new Intl.DateTimeFormat("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(new Date(dateStr))
 }
 
 export default async function ClientDetailPage({
@@ -202,31 +174,13 @@ async function ClientPortfolioData({
 
   return (
     <>
-      {/* Portfolio KPIs */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard
-          title="Immobilien"
-          value={String(properties.length)}
-          icon={Building2}
-        />
-        <MetricCard
-          title="Portfolio-Wert"
-          value={formatCurrency(totalValue)}
-          icon={Wallet}
-        />
-        <MetricCard
-          title="Mtl. Mieteinnahmen"
-          value={formatCurrency(totalRent, true)}
-          icon={Wallet}
-        />
-        <MetricCard
-          title="Mtl. Netto-Cashflow"
-          value={formatCurrency(totalNet, true)}
-          icon={Wallet}
-        />
-      </div>
+      <ClientKpis
+        propertyCount={properties.length}
+        totalValue={totalValue}
+        totalRent={totalRent}
+        totalNet={totalNet}
+      />
 
-      {/* Tabs */}
       <Tabs defaultValue="properties">
         <TabsList>
           <TabsTrigger value="properties">Immobilien</TabsTrigger>
@@ -234,236 +188,20 @@ async function ClientPortfolioData({
           <TabsTrigger value="details">Erweiterte Daten</TabsTrigger>
         </TabsList>
 
-        {/* Properties Tab */}
         <TabsContent value="properties">
-          <Card className="shadow-card">
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Adresse</TableHead>
-                    <TableHead>Typ</TableHead>
-                    <TableHead className="text-right">Kaufpreis</TableHead>
-                    <TableHead className="text-right">Marktwert</TableHead>
-                    <TableHead className="text-right">Miete/Mo.</TableHead>
-                    <TableHead className="w-10" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {properties.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-                        Keine Immobilien zugewiesen.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    properties.map((p) => (
-                      <TableRow key={p.id}>
-                        <TableCell className="font-medium">{p.name}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {p.address}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">
-                            {typeLabels[p.type] ?? p.type}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatCurrency(p.purchase_price)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatCurrency(p.current_value)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatCurrency(p.monthly_rent, true)}
-                        </TableCell>
-                        <TableCell>
-                          <Link href={`/admin/properties/${p.id}`}>
-                            <Button variant="ghost" size="sm">
-                              Details
-                            </Button>
-                          </Link>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+          <ClientPropertiesTable properties={properties} />
         </TabsContent>
 
-        {/* Documents Tab */}
         <TabsContent value="documents">
-          <Card className="shadow-card">
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Kategorie</TableHead>
-                    <TableHead className="text-right">Größe</TableHead>
-                    <TableHead>Hochgeladen</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {!documents || documents.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
-                        Keine Dokumente vorhanden.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    documents.map((doc) => (
-                      <TableRow key={doc.id}>
-                        <TableCell className="font-medium">
-                          <div className="flex items-center gap-2">
-                            <FileText className="h-4 w-4 text-muted-foreground" />
-                            {doc.name}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {(doc.document_categories as { name: string } | null)?.name ?? "—"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums text-muted-foreground">
-                          {doc.file_size
-                            ? `${(doc.file_size / 1024).toFixed(0)} KB`
-                            : "—"}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {formatDate(doc.created_at)}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+          <ClientDocumentsTable
+            documents={documents as { id: string; name: string; file_size: number | null; created_at: string; document_categories: { name: string } | null }[] | null}
+          />
         </TabsContent>
 
-        {/* Extended Details Tab */}
         <TabsContent value="details">
-          <Card className="shadow-card">
-            <CardHeader>
-              <CardTitle className="font-heading text-lg">
-                Erweiterte Kundendaten
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {clientProfile ? (
-                <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <DetailItem
-                    label="Jahresgehalt"
-                    value={
-                      clientProfile.annual_salary
-                        ? formatCurrency(clientProfile.annual_salary)
-                        : null
-                    }
-                  />
-                  <DetailItem
-                    label="Eigenkapital"
-                    value={
-                      clientProfile.equity_capital
-                        ? formatCurrency(clientProfile.equity_capital)
-                        : null
-                    }
-                  />
-                  <DetailItem
-                    label="Schufa-Rating"
-                    value={clientProfile.credit_score}
-                  />
-                  <DetailItem
-                    label="Steuerklasse"
-                    value={
-                      clientProfile.tax_class
-                        ? `Klasse ${clientProfile.tax_class}`
-                        : null
-                    }
-                  />
-                  <DetailItem
-                    label="Risikoneigung"
-                    value={clientProfile.risk_appetite}
-                  />
-                  <DetailItem
-                    label="Investment-Budget"
-                    value={
-                      clientProfile.investment_budget
-                        ? formatCurrency(clientProfile.investment_budget)
-                        : null
-                    }
-                  />
-                  <DetailItem
-                    label="Wunschregion"
-                    value={clientProfile.preferred_region}
-                  />
-                  <DetailItem
-                    label="Wunsch-Objektart"
-                    value={clientProfile.preferred_property_type}
-                  />
-                  <DetailItem
-                    label="Geplante Anzahl"
-                    value={
-                      clientProfile.planned_property_count
-                        ? String(clientProfile.planned_property_count)
-                        : null
-                    }
-                  />
-                  <DetailItem
-                    label="Vertragsart"
-                    value={clientProfile.contract_type}
-                  />
-                  <DetailItem
-                    label="Provision"
-                    value={
-                      clientProfile.commission_rate
-                        ? `${clientProfile.commission_rate}%`
-                        : null
-                    }
-                  />
-                  <DetailItem
-                    label="Zahlungsstatus"
-                    value={clientProfile.payment_status}
-                  />
-                  {clientProfile.notes && (
-                    <div className="sm:col-span-2 lg:col-span-3">
-                      <dt className="text-sm text-muted-foreground">
-                        Interne Notizen
-                      </dt>
-                      <dd className="mt-1 text-sm whitespace-pre-wrap">
-                        {clientProfile.notes}
-                      </dd>
-                    </div>
-                  )}
-                </dl>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Noch keine erweiterten Daten vorhanden. Verwenden Sie
-                  &quot;Profil bearbeiten&quot; um Daten hinzuzufügen.
-                </p>
-              )}
-            </CardContent>
-          </Card>
+          <ClientDetailsTab clientProfile={clientProfile} />
         </TabsContent>
       </Tabs>
     </>
-  )
-}
-
-function DetailItem({
-  label,
-  value,
-}: {
-  label: string
-  value: string | null | undefined
-}) {
-  return (
-    <div>
-      <dt className="text-sm text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 text-sm font-medium">{value ?? "—"}</dd>
-    </div>
   )
 }

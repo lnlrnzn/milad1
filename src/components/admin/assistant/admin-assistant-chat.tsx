@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useCallback, useMemo, useRef, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { useChat } from "@ai-sdk/react"
 import {
   DefaultChatTransport,
@@ -26,6 +27,10 @@ import {
   PromptInputFooter,
   PromptInputSubmit,
 } from "@/components/ai-elements/prompt-input"
+import { AttachmentButton, AttachmentPreview } from "@/components/ai/attachment-ui"
+import { CopyButton, FilePreview, formatTime } from "@/components/ai/chat-shared"
+import { useMessageTimestamps } from "@/hooks/use-message-timestamps"
+import { PdfViewerCard } from "@/components/pdf/pdf-viewer-card"
 import { Shimmer } from "@/components/ai-elements/shimmer"
 import {
   Reasoning,
@@ -54,9 +59,7 @@ import {
   Mail,
   Activity,
   User,
-  Copy,
-  Check,
-  Trash2,
+  Plus,
   Bell,
   MessageSquare,
   UserCog,
@@ -65,8 +68,12 @@ import {
   XCircle,
   Sparkles,
   BarChart3,
+  BookOpen,
+  Save,
+  FilePlus,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { persistChatMessages, createChatSession } from "@/lib/chat/actions"
 
 const suggestions = [
   {
@@ -102,11 +109,6 @@ const suggestions = [
 ]
 
 const streamdownPlugins = { code }
-const transport = new DefaultChatTransport({ api: "/api/admin-chat" })
-
-function formatTime(date: Date) {
-  return date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })
-}
 
 // ── Tool approval description builders ──────────────────────────────
 
@@ -124,37 +126,75 @@ function getApprovalDescription(toolName: string, input: Record<string, unknown>
       return `Kundenstatus auf "${input.newStatus ?? ""}" ändern?`
     case "create_task_note":
       return "Notiz erstellen?"
+    case "save_document":
+      return `Dokument "${input.filename ?? "unbekannt"}" speichern?`
+    case "generate_pdf":
+      return `PDF "${input.title ?? "unbekannt"}" generieren${input.saveToDocuments !== false ? " und speichern" : ""}?`
+    case "create_client":
+      return `Neuen Kunden "${input.firstName ?? ""} ${input.lastName ?? ""}" (${input.email ?? ""}) anlegen?`
     default:
       return `${toolName} ausführen?`
   }
 }
 
-export function AdminAssistantChat() {
+export function AdminAssistantChat({
+  sessionId: initialSessionId,
+  initialMessages = [],
+}: {
+  sessionId?: string
+  initialMessages?: Array<{
+    id: string
+    role: string
+    parts: unknown[]
+  }>
+}) {
+  const router = useRouter()
   const [input, setInput] = useState("")
-  const timestampsRef = useRef<Map<string, Date>>(new Map())
-  const [, forceUpdate] = useState(0)
+  const sessionIdRef = useRef(initialSessionId)
 
-  const { messages, sendMessage, setMessages, status, stop, addToolApprovalResponse } =
+  const transport = useMemo(
+    () => new DefaultChatTransport({ api: "/api/admin-chat" }),
+    []
+  )
+
+  const { messages, sendMessage, status, stop, addToolApprovalResponse } =
     useChat({
       transport,
+      messages: initialMessages as import("ai").UIMessage[],
       sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
     })
   const isLoading = status === "submitted" || status === "streaming"
+  const timestampsRef = useMessageTimestamps(messages)
 
+  // Persist messages after each completed exchange
+  const lastPersistedRef = useRef(initialMessages.length)
   useEffect(() => {
-    let updated = false
-    for (const msg of messages) {
-      if (!timestampsRef.current.has(msg.id)) {
-        timestampsRef.current.set(msg.id, new Date())
-        updated = true
-      }
+    if (
+      status === "ready" &&
+      messages.length > lastPersistedRef.current &&
+      sessionIdRef.current
+    ) {
+      lastPersistedRef.current = messages.length
+      persistChatMessages(
+        sessionIdRef.current,
+        messages.map((m) => ({
+          id: m.id,
+          role: m.role,
+          parts: m.parts as unknown[],
+        }))
+      )
     }
-    if (updated) forceUpdate((n) => n + 1)
-  }, [messages])
+  }, [status, messages.length])
 
   const handleSend = useCallback(
-    (text: string, files?: FileUIPart[]) => {
+    async (text: string, files?: FileUIPart[]) => {
       if (!text.trim() && (!files || files.length === 0)) return
+      // Lazy session creation on first message
+      if (!sessionIdRef.current) {
+        const newId = await createChatSession(true)
+        sessionIdRef.current = newId
+        window.history.replaceState(null, "", `/admin/assistant/${newId}`)
+      }
       const opts: { text: string; files?: FileUIPart[] } = { text: text.trim() }
       if (files && files.length > 0) opts.files = files
       sendMessage(opts)
@@ -163,10 +203,9 @@ export function AdminAssistantChat() {
     [sendMessage]
   )
 
-  const handleClear = useCallback(() => {
-    setMessages([])
-    timestampsRef.current.clear()
-  }, [setMessages])
+  const handleNewChat = useCallback(() => {
+    router.push("/admin/assistant")
+  }, [router])
 
   return (
     <Card className="shadow-card flex flex-col h-[calc(100vh-13rem)] overflow-hidden">
@@ -189,10 +228,10 @@ export function AdminAssistantChat() {
           <Button
             variant="ghost"
             size="icon-sm"
-            onClick={handleClear}
+            onClick={handleNewChat}
             className="text-muted-foreground hover:text-foreground"
           >
-            <Trash2 className="h-4 w-4" />
+            <Plus className="h-4 w-4" />
             <span className="sr-only">Neuer Chat</span>
           </Button>
         )}
@@ -306,6 +345,18 @@ export function AdminAssistantChat() {
                             )
                           }
 
+                          // ── File attachments ──
+                          if (part.type === "file") {
+                            return (
+                              <FilePreview
+                                key={`file-${partIndex}`}
+                                url={part.url}
+                                filename={part.filename}
+                                mediaType={part.mediaType}
+                              />
+                            )
+                          }
+
                           // ── Tools ──
                           if (isToolUIPart(part)) {
                             const toolName = part.type.replace(/^tool-/, "")
@@ -327,7 +378,7 @@ export function AdminAssistantChat() {
                                       variant="approve"
                                       onClick={() =>
                                         addToolApprovalResponse({
-                                          id: part.toolCallId,
+                                          id: part.approval.id,
                                           approved: true,
                                         })
                                       }
@@ -338,7 +389,7 @@ export function AdminAssistantChat() {
                                       variant="reject"
                                       onClick={() =>
                                         addToolApprovalResponse({
-                                          id: part.toolCallId,
+                                          id: part.approval.id,
                                           approved: false,
                                         })
                                       }
@@ -440,7 +491,12 @@ export function AdminAssistantChat() {
 
       {/* Input */}
       <div className="border-t [&_[data-slot=input-group]]:border-0 [&_[data-slot=input-group]]:shadow-none [&_[data-slot=input-group]]:rounded-none">
-        <PromptInput onSubmit={({ text }) => handleSend(text)}>
+        <PromptInput
+          accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          multiple
+          onSubmit={({ text, files }) => handleSend(text, files)}
+        >
+          <AttachmentPreview />
           <PromptInputTextarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -448,9 +504,12 @@ export function AdminAssistantChat() {
             disabled={isLoading}
           />
           <PromptInputFooter>
-            <span className="text-xs text-muted-foreground">
-              Enter zum Senden
-            </span>
+            <div className="flex items-center gap-1">
+              <AttachmentButton />
+              <span className="text-xs text-muted-foreground">
+                Enter zum Senden
+              </span>
+            </div>
             <PromptInputSubmit
               status={status}
               onStop={stop}
@@ -470,6 +529,7 @@ const ACTION_TOOLS = new Set([
   "send_message",
   "update_client_status",
   "create_task_note",
+  "create_client",
 ])
 
 const toolMeta: Record<string, { label: string; icon: typeof Bot }> = {
@@ -486,6 +546,10 @@ const toolMeta: Record<string, { label: string; icon: typeof Bot }> = {
   send_message: { label: "Nachricht senden", icon: MessageSquare },
   update_client_status: { label: "Status ändern", icon: UserCog },
   create_task_note: { label: "Notiz erstellen", icon: StickyNote },
+  create_client: { label: "Kunde anlegen", icon: UserCog },
+  read_document: { label: "Dokument lesen", icon: BookOpen },
+  save_document: { label: "Dokument speichern", icon: Save },
+  generate_pdf: { label: "PDF generieren", icon: FilePlus },
 }
 
 function AdminToolDisplay({
@@ -559,6 +623,71 @@ function AdminToolDisplay({
     )
   }
 
+  // read_document gets a special compact display
+  if (toolName === "read_document") {
+    if (result.error) {
+      return (
+        <div className="rounded-lg border bg-card p-3 text-card-foreground">
+          <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <Icon className="h-3.5 w-3.5" />
+            {meta.label}
+          </div>
+          <p className="text-sm text-red-500">{result.error as string}</p>
+        </div>
+      )
+    }
+    return (
+      <div className="rounded-lg border bg-card p-3 text-card-foreground">
+        <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <Icon className="h-3.5 w-3.5" />
+          {meta.label}
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">{result.name as string}</span>
+          <span>·</span>
+          <span>{result.pageCount as number} Seiten</span>
+        </div>
+      </div>
+    )
+  }
+
+  // generate_pdf / save_document — show success/error + PdfViewerCard
+  if (toolName === "generate_pdf" || toolName === "save_document") {
+    const isSuccess = result.success === true
+    if (!isSuccess) {
+      return (
+        <div className="flex items-center gap-2.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          <XCircle className="h-4 w-4 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 font-medium">
+              <Icon className="h-3.5 w-3.5" />
+              {meta.label}
+            </div>
+            {typeof result.error === "string" && (
+              <p className="mt-0.5 text-xs opacity-80">{result.error}</p>
+            )}
+          </div>
+        </div>
+      )
+    }
+    return (
+      <div className="rounded-lg border bg-card p-3 text-card-foreground">
+        <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <Icon className="h-3.5 w-3.5" />
+          {meta.label}
+        </div>
+        {typeof result.message === "string" && (
+          <p className="mb-2 text-xs text-green-600">{result.message}</p>
+        )}
+        <PdfViewerCard
+          url={(result.signedUrl as string) ?? ""}
+          filename={(result.name as string) ?? "dokument.pdf"}
+          contentBase64={result.contentBase64 as string | undefined}
+        />
+      </div>
+    )
+  }
+
   // Read-only tools get compact display
   return (
     <div className="rounded-lg border bg-card p-3 text-card-foreground">
@@ -573,27 +702,3 @@ function AdminToolDisplay({
   )
 }
 
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false)
-
-  const handleCopy = useCallback(async () => {
-    if (!text) return
-    await navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }, [text])
-
-  return (
-    <button
-      onClick={handleCopy}
-      className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 [div:hover>&]:opacity-100"
-      title="Kopieren"
-    >
-      {copied ? (
-        <Check className="h-3 w-3 text-green-600" />
-      ) : (
-        <Copy className="h-3 w-3" />
-      )}
-    </button>
-  )
-}
